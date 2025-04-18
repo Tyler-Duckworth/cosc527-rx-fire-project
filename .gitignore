@@ -1,2 +1,4 @@
 venv/
 .test_work/
+*.tif.aux.xml
+__pycache__/
