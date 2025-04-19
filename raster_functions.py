@@ -67,8 +67,8 @@ def stack_rasters(input_files, output_file, metadata=None):
     vrt_options = gdal.BuildVRTOptions(separate=True)
     vrt = gdal.BuildVRT('/vsimem/stacked.vrt', input_files, options=vrt_options)
 
-    # if metadata is not None:
-    #     vrt.SetMetadata(metadata)
+    if metadata is not None:
+        vrt.SetMetadata(metadata)
 
     # Translate the VRT to a physical multi-band GeoTIFF
     gdal.Translate(output_file, vrt)
