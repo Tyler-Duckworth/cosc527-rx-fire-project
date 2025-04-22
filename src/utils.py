@@ -3,13 +3,22 @@
 ###############
 
 from osgeo import gdal
+from collections import deque
 import matplotlib.pyplot as plt
-
 gdal.UseExceptions()
+
+class RabbitQueue:
+    def __init__(self):
+        self._queue = deque()
+    def put(self, item):
+        self._queue.append(item)
+    def get(self):
+        return self._queue.popleft()
 
 #################
 ### FUNCTIONS ###
 #################
+
 
 def crop_raster(input_file, output_file, bbox):
     """

@@ -2,3 +2,4 @@ venv/
 .test_work/
 *.tif.aux.xml
 __pycache__/
+results/*.npy
