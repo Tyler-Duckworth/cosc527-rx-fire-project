@@ -6,6 +6,10 @@ By: Tyler Duckworth, Andy Zheng, and Gabriel Laboy
 Based on this paper: https://www.publish.csiro.au/WF/WF11055
 '''
 import argparse
+import os
+import time
+import sys
+import json
 import numpy as np
 from matplotlib import colors
 import matplotlib.pyplot as plt
@@ -18,23 +22,14 @@ from utils import RabbitQueue
 gdal.UseExceptions()
 
 
-parser = argparse.ArgumentParser(
-    prog="fire_simulation", 
-    description="Simulates a prescribed fire using a generated GeoTIFF file. See file for more info."
-)
-parser.add_argument("data_file", nargs="?", default="data/stacked_ca.tif", help="Path to .tif file to run the simulation on")
-parser.add_argument("--hide-animation", help="Hides the animation", action="store_true")
-parser.add_argument("-d", "--output-dir", type=str, help="Output directory to save intermediate data (defaults to \"results\")", default="results")
-parser.add_argument("-o", "--output-file", type=str, help="Name of file to save the animation to as an MP4 (defaults to \"[tn|ca]_anim.mp4\")", default="anim.mp4")
-parser.add_argument("-g", "--generations", type=int, help="Total number of generations to run the simulation over.", default=200)
-parser.add_argument("-f", "--switch-frame", type=int, help="Specifies which frame to switch from prescribed fires (Phase 1) to the forest fire (Phase 2)", default=25)
 
 WIND_PLOT_INTERVAL = 25 # controls the spacing between arrows on the wind plot
 SHOW_ANIM = True
 OUTPUT_DIR = "results"
 OUTPUT_FILE = "anim.mp4"
 CELL_WIDTH = 30
-
+GENERATIONS = 300
+SWITCH_FRAME = 25
 '''
 Fuel Lookup 
 '''
@@ -179,70 +174,107 @@ class FireSimulation:
             y1 = bldg[2] + bldg[4] + GAP_SIZE
             x_range = np.arange(x0, x1+1)
             y_range = np.arange(y0, y1+1)
-            self.env.grid[x0-FIREBREAK_SIZE:x0, y0-(FIREBREAK_SIZE-1):y1+FIREBREAK_SIZE] = -2 # top 
-            self.env.grid[x1-FIREBREAK_SIZE:x1, y0:y1] = -2 # bottom
-            self.env.grid[x0:x1, y0-FIREBREAK_SIZE+1:y0+1] = -2 # left
-            self.env.grid[x0:x1, y1:y1+FIREBREAK_SIZE] = -2 # right
+            self.env.grid[x0-FIREBREAK_SIZE:x0, y0-(FIREBREAK_SIZE-1):y1+FIREBREAK_SIZE] = -3 # top 
+            self.env.grid[x1-FIREBREAK_SIZE:x1, y0:y1] = -3 # bottom
+            self.env.grid[x0:x1, y0-FIREBREAK_SIZE+1:y0+1] = -3 # left
+            self.env.grid[x0:x1, y1:y1+FIREBREAK_SIZE] = -3 # right
 
             # set bottom and right edges on fire (TODO: Add logic to pick the upwind edges)
             ignition_points += (list(zip([x1-FIREBREAK_SIZE-1] * (y1-y0), y_range[1:-1])))
             ignition_points += (list(zip(x_range[0:-3], [y1-1] * (x1-x0))))
         self.init_fires(ignition_points) # Add fires for prescribed burn phase
 
-def run_simulation(input_file_name="", generations=200, switch_frame=30):
-    env = Environment(input_file_name, OUTPUT_DIR)
-    env.draw_buildings()
-    sim = FireSimulation(env, generations)
+def run_simulation(input_file_name="", seed=500, config_file_name=None):
+    env = Environment(input_file_name, OUTPUT_DIR, seed, GENERATIONS)
+    if config_file_name is None:
+        env.draw_buildings()
+    else:
+        env.load_buildings_from_file(config_file_name)
+    sim = FireSimulation(env, GENERATIONS)
     sim.create_firebreaks()
     
     cmap = colors.ListedColormap(['blue', 'black', 'green', 'orange', 'red'])
     norm = colors.BoundaryNorm([-2, -1, 0, 1, 2, 3], cmap.N)   
-    fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(18,6)) 
+
+    fig, ax = plt.subplots(figsize=(6,6))
+    ax.imshow(env.fuel_grid, cmap='terrain')
+    ax.set_title("Fuel Distribution")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    fig.savefig(f"{OUTPUT_DIR}/fuel_distribution.png", bbox_inches='tight')
+    fig.savefig(f"{OUTPUT_DIR}/fuel_distribution.svg", bbox_inches='tight')
+    plt.close(fig)
+
+    fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(12,6)) 
 
     # Primary Plot - Show state grid with background map layer
     im1 = axs[0].imshow(env.bg, cmap='binary', vmin=-1, vmax=1)
     im2 = axs[0].imshow(env.grid, alpha=.5, cmap=cmap, norm=norm, animated=True)
+    time_text = axs[0].text(0.05, 0.95,'',horizontalalignment='left',verticalalignment='top', c='yellow', transform=axs[0].transAxes)
     patch_list = []
     for bldg in env.buildings:
         patch_list.append(axs[0].add_patch(patches.Rectangle((bldg[2]-1, bldg[1]-1), bldg[4], bldg[3], linewidth=1, edgecolor='r')))
     axs[0].set_title('Fire Spread')
     
-    # Fuel Plot - Shows distribution of fuels
-    axs[1].imshow(env.fuel_grid, cmap=cmap, norm=norm)
-    axs[1].set_title("Fuel Distribution")
-
     wind_ticks = np.arange(0, env.grid_size[1], WIND_PLOT_INTERVAL)
-    im3 = axs[2].quiver(wind_ticks, wind_ticks, env.wind_grid[::WIND_PLOT_INTERVAL, ::WIND_PLOT_INTERVAL, 0], env.wind_grid[::WIND_PLOT_INTERVAL, ::WIND_PLOT_INTERVAL, 1])
-    axs[2].set_title("Wind Grid")
+    im3 = axs[1].quiver(wind_ticks, wind_ticks, env.wind_grid[::WIND_PLOT_INTERVAL, ::WIND_PLOT_INTERVAL, 0], env.wind_grid[::WIND_PLOT_INTERVAL, ::WIND_PLOT_INTERVAL, 1])
+    axs[1].set_title("Wind Grid")
 
     def init():
         """ Dummy function (FuncAnimation runs this once before plotting) """
-        return im1, im2, im3, *patch_list
+        time_text.set_text("Init")
+        return im1, im2, im3, time_text, *patch_list
 
     def update_anim(frame_no):
-        if frame_no == switch_frame:
+        if frame_no == SWITCH_FRAME:
             # switch phases - add fire to random part of map
             sim.init_fires([(x, y) for x in range(300, 360) for y in range(300, 360)])
         sim.update_grid(frame_no)
         im2.set_array(env.grid)
         im3.set_UVC(env.wind_grid[::WIND_PLOT_INTERVAL, ::WIND_PLOT_INTERVAL, 0], env.wind_grid[::WIND_PLOT_INTERVAL, ::WIND_PLOT_INTERVAL, 1])
-        
-        return im1, im2, im3, *patch_list
+        time_text.set_text(frame_no)
+        return im1, im2, im3, time_text, *patch_list
 
-    anim = animation.FuncAnimation(fig, update_anim, init_func=init, frames=generations, blit=True) 
+    anim = animation.FuncAnimation(fig, update_anim, init_func=init, frames=GENERATIONS, blit=True, repeat=False) 
     plt.tight_layout()
     if SHOW_ANIM:
-        plt.show()    
-    anim.save(f"{OUTPUT_DIR}/{OUTPUT_FILE}")
+        plt.show()
+    print("Saving animation...") 
+   
+    anim.save(f"{OUTPUT_DIR}/{OUTPUT_FILE}", progress_callback=lambda i, n: print(f'Saving frame {i}/{n}'), dpi=300)
+    print("Finished saving animation...")    
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        prog="fire_simulation", 
+        description="Simulates a prescribed fire using a generated GeoTIFF file. See file for more info."
+    )
+    parser.add_argument("data_file", nargs="?", default="data/stacked_ca.tif", help="Path to .tif file to run the simulation on")
+    parser.add_argument("-c", "--config-file", type=str, help="Path to pre-built config file (if using)")
+    parser.add_argument("--hide-animation", help="Hides the animation", action="store_true")
+    parser.add_argument("-d", "--output-dir", type=str, help="Output directory to save intermediate data (defaults to \"results\")", default="results")
+    parser.add_argument("-o", "--output-file", type=str, help="Name of file to save the animation to as an MP4 (defaults to \"[tn|ca]_anim.mp4\")", default="anim.mp4")
+    parser.add_argument("-g", "--generations", type=int, help="Total number of generations to run the simulation over. (Defaults to 200)", default=200)
+    parser.add_argument("-f", "--switch-frame", type=int, help="Specifies which frame to switch from prescribed fires (Phase 1) to the forest fire (Phase 2). (Defaults to 25)", default=25)
+    parser.add_argument("-s", "--seed", type=int, help="Random number seed", default=int(time.time()))
+    args = parser.parse_args(sys.argv[1:])
+    return args
+
+
 
 if __name__ == "__main__":
-    args = parser.parse_args()
+    args = parse_arguments()
     try:
         SHOW_ANIM = not args.hide_animation
         OUTPUT_DIR = args.output_dir
-        OUTPUT_FILE = ('ca' if 'ca' in args.data_file else 'tn') + "_" + args.output_file
-        run_simulation(args.data_file, args.generations, args.switch_frame)
+        if not os.path.exists(OUTPUT_DIR):
+            os.makedirs(OUTPUT_DIR, exist_ok=True)
+        OUTPUT_FILE = args.output_file
+        GENERATIONS = args.generations
+        SWITCH_FRAME = args.switch_frame
+        run_simulation(args.data_file, args.seed, args.config_file)
     except Exception as e:
         print("ERROR")
         print(e)
+        raise e
         exit(1)

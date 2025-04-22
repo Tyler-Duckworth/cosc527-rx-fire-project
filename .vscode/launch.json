@@ -11,6 +11,15 @@
             "program": "${workspaceFolder}/src/fire_simulation.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Configuration Debug",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/fire_simulation.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "args": ["-c", ".\\config\\default_scenario.json"]
         }
     ]
 }

@@ -1,0 +1,31 @@
+{
+    "buildings": [
+        {
+            "origin": [100, 100],
+            "width": 2,
+            "height": 3,
+            "name": "Bathroom"
+        },
+        {
+            "origin": [50, 10],
+            "width": 5,
+            "height": 7,
+            "name": "Research Station"
+        },
+        {
+            "origin": [200, 150],
+            "width": 30,
+            "height": 30,
+            "name": "Town"
+        },
+        {
+            "origin": [250, 350],
+            "width": 2,
+            "height": 2,
+            "name": "Fire Tower"
+        }
+    ],
+    "ignition_points": [
+        {"type": "square", "origin": [350, 362], "width": 10, "height": 300}
+    ]
+}

@@ -2,6 +2,8 @@ import numpy as np
 from osgeo import gdal
 from perlin_numpy import generate_perlin_noise_3d
 from datetime import datetime
+import os
+import json 
 
 MAX_BUILDINGS = 10
 BUILDING_POOL_DIST = [0.5, 0.25, 0.2, 0.05]
@@ -11,7 +13,7 @@ BUILDING_POOL = [
     {"width": 2, "height": 3, "name": "Bathroom", "limit": 10},
     {"width": 30, "height": 30, "name": "Town", "limit": 1}
 ]
-WIND_VARIABILITY = 0 # wind will be randomized with a magnitude of (-x, x)
+WIND_VARIABILITY = 2 # wind will be randomized with a magnitude of (-x, x)
 DEFAULT_AMBTEMP = 68
 DEFAULT_RELHUM = 0.5
 DEFAULT_WIND = "0,0"
@@ -27,7 +29,8 @@ class Environment:
     - 3 - Slope (degrees, [0, 90])
     - 4 - Aspect (degrees, [0, 360])
     '''
-    def __init__(self, source_file: str, output_dir: str):
+    def __init__(self, source_file: str, output_dir: str, seed: int, generations: int):
+        self.seed = seed
         raw_file = gdal.Open(source_file)
         self.output_dir = output_dir
         output_file_name = source_file.replace(".tif", f'results_{datetime.now().strftime("%Y_%m_%d__%H%M%S")}.tif')
@@ -63,31 +66,47 @@ class Environment:
         self.slope_grid = raw_file.GetRasterBand(3).ReadAsArray() / 100
         
         self.init_fuel_grid(self.bg)
-        self.init_wind_grid((raw_file.RasterXSize, raw_file.RasterYSize, 2))
+        self.init_wind_grid((raw_file.RasterXSize, raw_file.RasterYSize, 2), generations)
         self.buildings = []
 
     def save(self, step=0):
         ''' Saves the current info (grid) to a file'''
-        # TODO: Update this to save as a GeoTIFF?
-        np.save(f'{self.output_dir}/frame_{step}.npy', self.grid)
+        if not os.path.exists(f"{self.output_dir}/frames"):
+            os.makedirs(f"{self.output_dir}/frames")
+        np.save(f'{self.output_dir}/frames/frame_{step}.npy', self.grid)
 
+    def load_buildings_from_file(self, file_path):
+        with open(file_path, "r") as fp:
+            buf = json.load(fp)
+        for bldg in buf["buildings"]:
+            x, y = bldg.get("origin", [0, 0])
+            width = bldg.get("width", 0)
+            height = bldg.get("height", 0)
+            self.grid[x:(x+width), y:(y+height)] = -2
+            self.buildings.append([bldg['name'], x, y, width, height])
+
+
+    
     def draw_buildings(self):
         ''' Draw the buildings '''
-        num_buildings = np.random.choice(np.arange(2, MAX_BUILDINGS))
+        rng = np.random.default_rng(self.seed)
+        num_buildings = rng.choice(np.arange(2, MAX_BUILDINGS))
         while len(self.buildings) < num_buildings:
             # draw building from pool
-            choice = np.random.choice(np.arange(len(BUILDING_POOL)), p=BUILDING_POOL_DIST)
+            choice = rng.choice(np.arange(len(BUILDING_POOL)), p=BUILDING_POOL_DIST)
             bldg = BUILDING_POOL[choice]
             # choose coords - start with no constraints (i.e. a building can go anywhere)
-            x, y = np.random.choice(np.arange(10, self.grid_size[0] - 10), size=2)
+            x, y = rng.choice(np.arange(10, self.grid_size[0] - 10), size=2)
             width = bldg['width']
             height = bldg['height']
             # check for overlap
             corners = [(x, y), (x, y+height), (x+width, y), (x+width, y+height)]
+            
+            # check for overlap with other buildings 
             has_overlap = False
             for b in self.buildings:
                 for c_x, c_y in corners:
-                    if (b[1] <= c_x and c_x <= (b[1] + b[3])) and (b[2] <= c_y and c_y <= (b[2] + b[4])):
+                    if ((b[1] - 10) <= c_x and c_x <= (b[1] + b[3] + 10)) and ((b[2] - 10) <= c_y and c_y <= (b[2] + b[4] + 10)):
                         has_overlap = True
                         break
             if not has_overlap:
@@ -122,13 +141,19 @@ class Environment:
         self.grid[fuel_band <= 0] = -1
         self.non_fuel_mask = fuel_band <= 0
     
-    def init_wind_grid(self, grid_size, seed=None):
+    def init_wind_grid(self, grid_size, generations=300):
         '''
         Creates the wind grid for this simulation
 
         Wind Grid - Stores the wind as a vector [u, v] in m/s
         '''
-        self.noise = generate_perlin_noise_3d((self.grid_size[0], self.grid_size[1]*2, 2), (3, 3, 2))
+        res = [-1, -1, 2]
+        for i in reversed(range(1, 9)):
+            if grid_size[0] % i == 0 and res[0] == -1:
+                res[0] = i
+            if (grid_size[1]+generations) % i == 0 and res[1] == -1:
+                res[1] = i
+        self.noise = generate_perlin_noise_3d((grid_size[0], grid_size[1]+generations, 2), res)
         self.wind_grid = np.full(grid_size, self.wind) + (self.get_wind_adjustment())
     
     def get_wind_adjustment(self, offset=0):
