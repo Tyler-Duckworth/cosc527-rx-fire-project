@@ -1,0 +1,25 @@
+{
+    "name": "Scenario 2",
+    "output_dir": "results/s2",
+    "data_file": "data/stacked_ca.tif",
+    "show_animation": false,
+    "generations": 400,
+    "switch_frame": 50,
+    "buildings": [
+        {
+            "origin": [100, 150],
+            "width": 25,
+            "height": 500,
+            "name": "RXFIRE"
+        },
+        {
+            "origin": [150, 100],
+            "width": 500,
+            "height": 25,
+            "name": "RXFIRE"
+        }
+    ],
+    "fire_origins": [
+        {"type": "square", "origin": [300, 300], "width": 200, "height": 200}
+    ]
+}

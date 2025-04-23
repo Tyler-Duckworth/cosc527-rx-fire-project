@@ -1,4 +1,8 @@
 {
+    "name": "California Default",
+    "output_dir": "results/default_ca",
+    "data_file": "data/stacked_ca.tif",
+    "show_animation": true,
     "buildings": [
         {
             "origin": [100, 100],
@@ -26,6 +30,6 @@
         }
     ],
     "ignition_points": [
-        {"type": "square", "origin": [350, 362], "width": 10, "height": 300}
+        {"type": "square", "origin": [350, 0], "width": 10, "height": 300}
     ]
 }

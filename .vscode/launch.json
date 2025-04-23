@@ -19,7 +19,7 @@
             "program": "${workspaceFolder}/src/fire_simulation.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
-            "args": ["-c", ".\\config\\default_scenario.json"]
+            "args": ["-c", ".\\config\\scenario_1.json"]
         }
     ]
 }

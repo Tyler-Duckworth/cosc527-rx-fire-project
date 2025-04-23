@@ -5,4 +5,4 @@ __pycache__/
 *.npy
 
 results/**/frames/
-src/config.py
+results/**/frame_*.png
